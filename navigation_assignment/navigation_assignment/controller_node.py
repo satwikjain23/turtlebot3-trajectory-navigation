@@ -7,118 +7,149 @@ import math
 
 
 class PurePursuitController:
+    """
+    Implements a Pure Pursuit controller with an important modification:
+    ➤ The algorithm keeps track of the last reached trajectory index.
+    This prevents the robot from turning backwards toward earlier points.
+    """
 
     def __init__(self, lookahead_distance=0.4):
+        # Distance ahead on the trajectory to "chase"
         self.Ld = lookahead_distance
 
     def find_lookahead_point(self, x, y, traj, current_index, Ld):
         """
-        Find the next trajectory point *ahead* of the robot,
-        starting search from current_index.
+        Finds the next point on the trajectory that is at least Ld
+        meters ahead of the robot.
+
+        IMPORTANT:
+        - Search starts from current_index → prevents robot turning backward.
         """
-        print("len=", len(traj))
+
         for i in range(current_index, len(traj)):
             tx = traj[i].position.x
             ty = traj[i].position.y
             dist = math.hypot(tx - x, ty - y)
 
+            # If point is farther than Ld, return it
             if dist >= Ld:
                 return i, tx, ty
 
-        # No more points ahead → return last point
+        # If no point found (robot is near end), return the last trajectory point
         last = traj[-1]
         return len(traj) - 1, last.position.x, last.position.y
 
     def compute_cmd(self, x, y, yaw, traj, current_index):
+        """
+        Computes linear and angular velocity (v, w) using pure pursuit.
+        Also returns updated trajectory index.
+        """
+
+        # Check if robot is close to the final goal
         final_x = traj[-1].position.x
         final_y = traj[-1].position.y
         dist_to_goal = math.hypot(final_x - x, final_y - y)
 
         if dist_to_goal < 0.15:
-            return 0.0, 0.0, len(traj) - 1 
+            # Robot reached goal → stop
+            return 0.0, 0.0, len(traj) - 1
 
+        # Get next lookahead point
         new_index, goal_x, goal_y = self.find_lookahead_point(
             x, y, traj, current_index, self.Ld)
 
-        # Compute direction to goal point
+        # Compute angle to goal
         dx = goal_x - x
         dy = goal_y - y
-        print("-------------------------")
-        print("new_index=",new_index)
-        print("x=",x," y=",y," goalx=",goal_x, " goaly=",goal_y)
+
         angle_to_goal = math.atan2(dy, dx)
+
+        # Angular error = difference between goal direction and robot heading
         heading_error = angle_to_goal - yaw
-        print("head=",heading_error)
 
-        # Normalize angle
-        heading_error = math.atan2(math.sin(heading_error), math.cos(heading_error))
-        print("headn=", heading_error)
+        # Normalize angle to [-pi, pi]
+        heading_error = math.atan2(math.sin(heading_error),
+                                   math.cos(heading_error))
 
-        # Output velocities
-        v = 0.2  # safe linear speed
-        w = (heading_error/3.14)*1.82
-        
+        # Pure Pursuit control outputs
+        v = 0.2  # constant safe forward speed
+        w = (heading_error / 3.14) * 1.82  # simple proportional steering
+
         return v, w, new_index
 
 
 class ControllerNode(Node):
+    """
+    ROS2 node:
+    - Subscribes to /trajectory (list of poses to follow)
+    - Subscribes to /odom (robot pose)
+    - Runs Pure Pursuit controller
+    - Publishes /cmd_vel to drive robot
+    """
 
     def __init__(self):
         super().__init__("controller_node")
 
-        # Subscriptions
-        self.create_subscription(PoseArray, "/trajectory",
-                                 self.trajectory_callback, 10)
-        self.create_subscription(Odometry, "/odom",
-                                 self.odom_callback, 10)
+        # Subscribe to generated trajectory
+        self.create_subscription(
+            PoseArray, "/trajectory", self.trajectory_callback, 10)
 
-        # Publisher
+        # Subscribe to robot odometry
+        self.create_subscription(
+            Odometry, "/odom", self.odom_callback, 10)
+
+        # Publisher for robot velocity commands
         self.cmd_pub = self.create_publisher(Twist, "/cmd_vel", 10)
 
-        # Internal state
+        # Internal storage
         self.traj = []
-        self.current_index = 1  # <--- FIX: remembers progress
+        self.current_index = 1  # ensures forward progress (prevents backward turning)
 
+        # Robot pose variables updated from /odom
         self.x = 0.0
         self.y = 0.0
         self.yaw = 0.0
 
+        # Controller instance
         self.controller = PurePursuitController(lookahead_distance=0.4)
 
-        #self.get_logger().info("Controller Node with forward-progress Pure Pursuit initialized.")
-
     def trajectory_callback(self, msg):
+        """ Stores incoming trajectory points """
         self.traj = msg.poses
-        
 
     def odom_callback(self, msg):
-        # Update robot pose
+        """ Reads robot pose, then computes and publishes control commands """
+
+        # Extract robot position
         self.x = msg.pose.pose.position.x
         self.y = msg.pose.pose.position.y
 
+        # Convert quaternion → yaw
         q = msg.pose.pose.orientation
         siny = 2.0 * (q.w * q.z + q.x * q.y)
         cosy = 1.0 - 2.0 * (q.y*q.y + q.z*q.z)
         self.yaw = math.atan2(siny, cosy)
-        #print("yaw=",math.degrees(self.yaw))
 
         if len(self.traj) == 0:
+            # No trajectory yet → do nothing
             return
 
-        # Compute control command
+        # Compute velocity command via Pure Pursuit
         v, w, new_index = self.controller.compute_cmd(
             self.x, self.y, self.yaw,
             self.traj,
-            self.current_index  # always forward from this index
+            self.current_index  # pass last index to avoid backward motion
         )
 
-        # Update index for next iteration
+        # Update index to move forward along trajectory
         self.current_index = min(new_index, len(self.traj) - 1)
 
-        # Publish command
+        # Build Twist command
         cmd = Twist()
         cmd.linear.x = v
         cmd.angular.z = w
+
+        # Publish /cmd_vel
         self.cmd_pub.publish(cmd)
 
 

@@ -26,7 +26,7 @@ setup(
             'trajectory_generator_node = navigation_assignment.trajectory_generator_node:main',
             'controller_node = navigation_assignment.controller_node:main',
             'trajectory_visualizer = navigation_assignment.trajectory_visualizer_node:main',
-
+            'obstacle_avoidance = navigation_assignment.obstacle_avoidance:main',
         ],
     },
 )

@@ -12,6 +12,8 @@ Time-parameterize the smoothed path and publish a ROS2 trajectory for control.
 **3)Trajectory Tracking Controller**
 Use a Pure Pursuit controller to compute /cmd_vel and follow the trajectory.
 
+![demo](./video_90_deg.gif)
+
 ## How to Build & Run
 
 ### Install dependencies

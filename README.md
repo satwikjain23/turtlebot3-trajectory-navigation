@@ -70,3 +70,12 @@ All output plots are saved in:
 ```bash
 test_results/
 ```
+## Obstacle Avoidance
+```bash
+ros2 launch turtlebot3_gazebo turtlebot3_world.launch.py
+ros2 run navigation_assignment path_smoothing_node 
+ros2 run navigation_assignment trajectory_generator_node 
+ros2 run navigation_assignment trajectory_visualizer 
+ros2 run navigation_assignment obstacle_avoidance 
+```
+![demo2](./video_obstacle_avoidance.gif)

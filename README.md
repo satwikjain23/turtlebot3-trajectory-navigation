@@ -57,3 +57,16 @@ rviz2
 >**/robot_path**
 >
 >**/visualized_trajectory**
+
+## Test Automation
+This repository includes automated test scripts for validating the **path smoothing** and **trajectory generation** algorithms.
+
+### Run All Tests
+From your workspace root:
+```bash
+bash src/run_all_tests.sh
+```
+All output plots are saved in:
+```bash
+test_results/
+```
